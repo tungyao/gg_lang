@@ -9,7 +9,7 @@
 using Value = std::variant<int, std::string>;
 // ------------------ Tokenizer ------------------
 enum class TokenType {
-	LET, PRINT, IF, ELSE, FOR,
+	LET, PRINT, IF, ELSE, FOR, FUNC, RETURN,
 
 	IDENT, NUMBER, STRING,
 
@@ -17,7 +17,7 @@ enum class TokenType {
 	ASSIGN, PLUS_ASSIGN, MINUS_ASSIGN, STAR_ASSIGN, SLASH_ASSIGN,
 	EQ, NEQ, LT, GT, LE, GE,
 	LPAREN, RPAREN, LBRACE, RBRACE,
-	SEMICOLON,
+	SEMICOLON, COMMA,
 	END
 };
 
@@ -61,6 +61,8 @@ public:
 			if (word == "if")    return { TokenType::IF, word };
 			if (word == "else")  return { TokenType::ELSE, word };
 			if (word == "for")   return { TokenType::FOR, word };
+			if (word == "func")  return { TokenType::FUNC, word };
+			if (word == "return") return { TokenType::RETURN, word };
 			return { TokenType::IDENT, word };
 		}
 
@@ -98,6 +100,7 @@ public:
 		case '{': return { TokenType::LBRACE, "{" };
 		case '}': return { TokenType::RBRACE, "}" };
 		case ';': return { TokenType::SEMICOLON, ";" };
+		case ',': return { TokenType::COMMA, "," };
 		}
 		return { TokenType::END, "" };
 	}
@@ -123,10 +126,15 @@ struct StringExpr : Expr {
 	std::string value;
 	explicit StringExpr(std::string v) : value(std::move(v)) {}
 };
+struct CallExpr : Expr {
+	std::string name;
+	std::vector<std::unique_ptr<Expr>> args;
+	CallExpr(std::string n, std::vector<std::unique_ptr<Expr>> a) : name(std::move(n)), args(std::move(a)) {}
+};
 
 struct Stmt { virtual ~Stmt() {} };
 struct BlockStmt : Stmt { std::vector<std::unique_ptr<Stmt>> stmts; };
-struct PrintStmt : Stmt { std::unique_ptr<Expr> expr; explicit PrintStmt(std::unique_ptr<Expr> e) :expr(std::move(e)) {} };
+struct PrintStmt : Stmt { std::vector<std::unique_ptr<Expr>> exprs; explicit PrintStmt(std::vector<std::unique_ptr<Expr>> e) :exprs(std::move(e)) {} };
 struct LetStmt : Stmt {
 	std::string name; std::unique_ptr<Expr> expr;
 	LetStmt(std::string n, std::unique_ptr<Expr> e) :name(std::move(n)), expr(std::move(e)) {}
@@ -142,6 +150,22 @@ struct AssignStmt : Stmt {
 	std::unique_ptr<AssignExpr> assign;
 	explicit AssignStmt(std::unique_ptr<AssignExpr> a) : assign(std::move(a)) {}
 };
+struct FunctionDefStmt : Stmt {
+	std::string name;
+	std::vector<std::string> params;
+	std::unique_ptr<Stmt> body;
+	FunctionDefStmt(std::string n, std::vector<std::string> p, std::unique_ptr<Stmt> b)
+		: name(std::move(n)), params(std::move(p)), body(std::move(b)) {
+	}
+};
+struct ReturnStmt : Stmt {
+	std::unique_ptr<Expr> expr;
+	explicit ReturnStmt(std::unique_ptr<Expr> e) : expr(std::move(e)) {}
+};
+struct ExprStmt : Stmt {
+	std::unique_ptr<Expr> expr;
+	explicit ExprStmt(std::unique_ptr<Expr> e) : expr(std::move(e)) {}
+};
 
 
 class Parser {
@@ -156,13 +180,23 @@ class Parser {
 			int val = std::stoi(cur.text); advance();
 			return std::make_unique<NumberExpr>(val);
 		}
-		if (cur.type == TokenType::IDENT) {
-			std::string name = cur.text; advance();
-			return std::make_unique<VarExpr>(name);
-		}
 		if (cur.type == TokenType::STRING) {
 			std::string s = cur.text; advance();
 			return std::make_unique<StringExpr>(s);
+		}
+		if (cur.type == TokenType::IDENT) {
+			std::string name = cur.text; advance();
+			if (match(TokenType::LPAREN)) {
+				std::vector<std::unique_ptr<Expr>> args;
+				if (!match(TokenType::RPAREN)) {
+					do {
+						args.push_back(parseExpr());
+					} while (match(TokenType::COMMA));
+					if (!match(TokenType::RPAREN)) throw std::runtime_error("expected )");
+				}
+				return std::make_unique<CallExpr>(name, std::move(args));
+			}
+			return std::make_unique<VarExpr>(name);
 		}
 		if (match(TokenType::LPAREN)) {
 			auto e = parseExpr();
@@ -244,9 +278,13 @@ public:
 
 	std::unique_ptr<Stmt> parseStmt() {
 		if (match(TokenType::PRINT)) {
-			auto e = parseExpr();
+			std::vector<std::unique_ptr<Expr>> exprs;
+			exprs.push_back(parseExpr());
+			while (match(TokenType::COMMA)) {
+				exprs.push_back(parseExpr());
+			}
 			if (!match(TokenType::SEMICOLON)) throw std::runtime_error("expected ; after print");
-			return std::make_unique<PrintStmt>(std::move(e));
+			return std::make_unique<PrintStmt>(std::move(exprs));
 		}
 		if (match(TokenType::LET)) {
 			if (cur.type != TokenType::IDENT) throw std::runtime_error("expected identifier");
@@ -284,6 +322,27 @@ public:
 			s->body = std::move(body);
 			return s;
 		}
+		if (match(TokenType::FUNC)) {
+			if (cur.type != TokenType::IDENT) throw std::runtime_error("expected function name");
+			std::string name = cur.text; advance();
+			if (!match(TokenType::LPAREN)) throw std::runtime_error("expected ( after function name");
+			std::vector<std::string> params;
+			if (cur.type != TokenType::RPAREN) {
+				do {
+					if (cur.type != TokenType::IDENT) throw std::runtime_error("expected parameter name");
+					params.push_back(cur.text);
+					advance();
+				} while (match(TokenType::COMMA));
+			}
+			if (!match(TokenType::RPAREN)) throw std::runtime_error("expected ) after parameters");
+			auto body = parseStmt();
+			return std::make_unique<FunctionDefStmt>(name, std::move(params), std::move(body));
+		}
+		if (match(TokenType::RETURN)) {
+			auto e = parseExpr();
+			if (!match(TokenType::SEMICOLON)) throw std::runtime_error("expected ; after return");
+			return std::make_unique<ReturnStmt>(std::move(e));
+		}
 		if (match(TokenType::LBRACE)) {
 			auto block = std::make_unique<BlockStmt>();
 			while (cur.type != TokenType::RBRACE && cur.type != TokenType::END) {
@@ -297,13 +356,18 @@ public:
 		if (cur.type == TokenType::IDENT) {
 			auto expr = parseExpr();   // parseAssign 会处理 = / += / -= / *= / /=
 
-			// 确保这是赋值表达式
+			// 确保这是赋值表达式或调用表达式
 			if (auto a = dynamic_cast<AssignExpr*>(expr.get())) {
 				if (!match(TokenType::SEMICOLON)) throw std::runtime_error("expected ; after assignment");
 				return std::make_unique<AssignStmt>(std::unique_ptr<AssignExpr>(static_cast<AssignExpr*>(expr.release())));
 			}
-
-			throw std::runtime_error("expression statements not supported except assignment");
+			else if (auto c = dynamic_cast<CallExpr*>(expr.get())) {
+				if (!match(TokenType::SEMICOLON)) throw std::runtime_error("expected ; after call");
+				return std::make_unique<ExprStmt>(std::unique_ptr<Expr>(expr.release()));
+			}
+			else {
+				throw std::runtime_error("expression statements not supported except assignment or call");
+			}
 		}
 
 		// 允许空语句（在某些场景下容错）
@@ -313,77 +377,164 @@ public:
 };
 
 // ------------------ Interpreter ------------------
-class Interpreter {
-	std::unordered_map<std::string, Value> vars;
+struct Function {
+	std::vector<std::string> params;
+	std::unique_ptr<Stmt> body;
+};
 
-	Value  eval(Expr* e) {
+struct ReturnException {
+	Value val;
+	explicit ReturnException(Value v) : val(v) {}
+};
+
+class Interpreter {
+	std::vector<std::unordered_map<std::string, Value>> scopes;
+	std::unordered_map<std::string, std::unique_ptr<Function>> funcs;
+
+	void push_scope() { scopes.emplace_back(); }
+	void pop_scope() { scopes.pop_back(); }
+
+	Value eval(Expr* e) {
 		if (auto n = dynamic_cast<NumberExpr*>(e)) return n->value;
 		if (auto v = dynamic_cast<VarExpr*>(e)) {
-			if (vars.count(v->name)) return vars[v->name];
+			for (auto it = scopes.rbegin(); it != scopes.rend(); ++it) {
+				auto f = it->find(v->name);
+				if (f != it->end()) return f->second;
+			}
 			throw std::runtime_error("undefined variable: " + v->name);
 		}
 		if (auto s = dynamic_cast<StringExpr*>(e)) {
-			return s->value;  // 直接返回字符串，不打印
+			return s->value;
 		}
 		if (auto a = dynamic_cast<AssignExpr*>(e)) {
-			Value  val = eval(a->value.get());
-			vars[a->name] = val;
+			Value val = eval(a->value.get());
+			for (auto it = scopes.rbegin(); it != scopes.rend(); ++it) {
+				if (it->count(a->name)) {
+					(*it)[a->name] = val;
+					return val;
+				}
+			}
+			scopes.back()[a->name] = val;
 			return val;
 		}
 		if (auto b = dynamic_cast<BinaryExpr*>(e)) {
-			Value  l = eval(b->left.get()), r = eval(b->right.get());
+			Value l = eval(b->left.get()), r = eval(b->right.get());
 			if (b->op == "+") {
-				if (std::holds_alternative<int>(l) && std::holds_alternative<int>(r))
+				if (std::holds_alternative<std::string>(l) || std::holds_alternative<std::string>(r)) {
+					std::string ls = std::holds_alternative<int>(l) ? std::to_string(std::get<int>(l)) : std::get<std::string>(l);
+					std::string rs = std::holds_alternative<int>(r) ? std::to_string(std::get<int>(r)) : std::get<std::string>(r);
+					return ls + rs;
+				}
+				else {
 					return std::get<int>(l) + std::get<int>(r);
-				return std::get<std::string>(l) + std::get<std::string>(r); // 简单转 string
+				}
 			}
-			if (b->op == "-")  return std::get<int>(l) - std::get<int>(r);
-			if (b->op == "*")  return std::get<int>(l) * std::get<int>(r);
-			if (b->op == "/")  return std::get<int>(l) / std::get<int>(r);
-			if (b->op == "%")  return std::get<int>(l) % std::get<int>(r);
-			if (b->op == "==") return std::get<int>(l) == std::get<int>(r);
-			if (b->op != "!=" && b->op != "<" && b->op != ">" && b->op != "<=" && b->op != ">=") {
+			bool is_string = std::holds_alternative<std::string>(l) && std::holds_alternative<std::string>(r);
+			if (is_string) {
+				const std::string& ls = std::get<std::string>(l);
+				const std::string& rs = std::get<std::string>(r);
+				if (b->op == "==") return ls == rs;
+				if (b->op == "!=") return ls != rs;
+				if (b->op == "<") return ls < rs;
+				if (b->op == ">") return ls > rs;
+				if (b->op == "<=") return ls <= rs;
+				if (b->op == ">=") return ls >= rs;
+				throw std::runtime_error("invalid operator for strings: " + b->op);
+			}
+			else {
+				int li = std::get<int>(l), ri = std::get<int>(r);
+				if (b->op == "-") return li - ri;
+				if (b->op == "*") return li * ri;
+				if (b->op == "/") return li / ri;
+				if (b->op == "%") return li % ri;
+				if (b->op == "==") return li == ri;
+				if (b->op == "!=") return li != ri;
+				if (b->op == "<") return li < ri;
+				if (b->op == ">") return li > ri;
+				if (b->op == "<=") return li <= ri;
+				if (b->op == ">=") return li >= ri;
 				throw std::runtime_error("unknown operator: " + b->op);
 			}
-			if (b->op == "!=") return std::get<int>(l) != std::get<int>(r);
-			if (b->op == "<")  return std::get<int>(l) < std::get<int>(r);
-			if (b->op == ">")  return std::get<int>(l) > std::get<int>(r);
-			if (b->op == "<=") return std::get<int>(l) <= std::get<int>(r);
-			if (b->op == ">=") return std::get<int>(l) >= std::get<int>(r);
 		}
-		return 0;
+		if (auto c = dynamic_cast<CallExpr*>(e)) {
+			auto it = funcs.find(c->name);
+			if (it == funcs.end()) throw std::runtime_error("undefined function: " + c->name);
+			auto& f = it->second;
+			if (f->params.size() != c->args.size()) throw std::runtime_error("argument count mismatch for " + c->name);
+			std::vector<Value> arg_vals;
+			for (auto& arg : c->args) arg_vals.push_back(eval(arg.get()));
+			push_scope();
+			for (size_t i = 0; i < f->params.size(); ++i) {
+				scopes.back()[f->params[i]] = arg_vals[i];
+			}
+			Value ret = 0;
+			try {
+				exec(f->body.get());
+			}
+			catch (ReturnException& re) {
+				ret = re.val;
+			}
+			pop_scope();
+			return ret;
+		}
+		throw std::runtime_error("unknown expression type");
 	}
 
 public:
+	Interpreter() { push_scope(); } // global scope
+
 	void exec(Stmt* s) {
 		if (auto p = dynamic_cast<PrintStmt*>(s)) {
-			Value val = eval(p->expr.get());
-			if (std::holds_alternative<int>(val))
-				std::cout << std::get<int>(val) << "\n";
-			else
-				std::cout << std::get<std::string>(val) << "\n";
+			bool first = true;
+			for (auto& expr : p->exprs) {
+				Value val = eval(expr.get());
+				if (!first) std::cout << " ";
+				first = false;
+				if (std::holds_alternative<int>(val))
+					std::cout << std::get<int>(val);
+				else
+					std::cout << std::get<std::string>(val);
+			}
+			std::cout << "\n";
 		}
 		else if (auto l = dynamic_cast<LetStmt*>(s)) {
-			vars[l->name] = eval(l->expr.get());
+			Value val = eval(l->expr.get());
+			scopes.back()[l->name] = val;
 		}
 		else if (auto b = dynamic_cast<BlockStmt*>(s)) {
+			push_scope();
 			for (auto& stmt : b->stmts) exec(stmt.get());
+			pop_scope();
 		}
 		else if (auto i = dynamic_cast<IfStmt*>(s)) {
 			Value val = eval(i->cond.get());
-
 			if (std::get<int>(val)) exec(i->thenStmt.get());
-			else if (i->elseStmt)    exec(i->elseStmt.get());
+			else if (i->elseStmt) exec(i->elseStmt.get());
 		}
 		else if (auto f = dynamic_cast<ForStmt*>(s)) {
+			push_scope();
 			exec(f->init.get());
 			while (std::get<int>(eval(f->cond.get()))) {
 				exec(f->body.get());
-				(void)eval(f->step.get()); // step 是表达式（如 i = i + 1）
+				(void)eval(f->step.get());
 			}
+			pop_scope();
 		}
 		else if (auto a = dynamic_cast<AssignStmt*>(s)) {
 			eval(a->assign.get());
+		}
+		else if (auto fd = dynamic_cast<FunctionDefStmt*>(s)) {
+			auto func = std::make_unique<Function>();
+			func->params = fd->params;
+			func->body = std::move(fd->body);
+			funcs[fd->name] = std::move(func);
+		}
+		else if (auto r = dynamic_cast<ReturnStmt*>(s)) {
+			Value val = eval(r->expr.get());
+			throw ReturnException{ val };
+		}
+		else if (auto es = dynamic_cast<ExprStmt*>(s)) {
+			eval(es->expr.get());
 		}
 	}
 };
@@ -417,6 +568,9 @@ int main(int argc, char* argv[]) {
 			if (!stmt) break;
 			interp.exec(stmt.get());
 		}
+	}
+	catch (ReturnException&) {
+		std::cerr << "Error: return statement outside of function\n";
 	}
 	catch (std::exception& e) {
 		std::cerr << "Error: " << e.what() << "\n";
