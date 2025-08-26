@@ -1,12 +1,12 @@
-#ifndef LEXER_H
+﻿#ifndef LEXER_H
 #define LEXER_H
 
 #include <string>
 #include <vector>
 #include <cctype>
-
+#include <unordered_map>
 enum class TokenType {
-    // Operators and Punctuation
+	// Operators and Punctuation
 	LET, PRINT, IF, ELSE, FOR, FUNC, RETURN,
 
 	IDENT, NUMBER, STRING,
@@ -15,41 +15,44 @@ enum class TokenType {
 	ASSIGN, PLUS_ASSIGN, MINUS_ASSIGN, STAR_ASSIGN, SLASH_ASSIGN,
 	EQ, NEQ, LT, GT, LE, GE,
 	LPAREN, RPAREN, LBRACE, RBRACE,
-	SEMICOLON, COMMA,
+	SEMICOLON, COMMA, COMMENT,
 	END
 };
 
 struct Token {
-    TokenType type;
-    std::string text;
-    int line;
-    int column;
+	TokenType type;
+	std::string text;
+	size_t line;
+	//int column;
 };
 
 class Lexer {
 public:
-    Lexer(const std::string& source);
-    Token next();
+	Lexer(const std::string& source);
+	Token next();
 
 private:
-    std::string src;
-    int start;
-    int current;
-    int line;
-    int column;
+
+	std::vector<size_t> str2line;
+	std::string src;
+	int start;
+	int current;
+	int line;
+	int column;
 	size_t pos = 0;
 
 
-    char peek();
-    char peekNext();
-    bool isAtEnd();
-    void advance();
-    Token makeToken(TokenType type);
-    Token errorToken(const std::string& message);
-    void skipWhitespace();
-    Token identifier();
-    Token number();
-    Token string();
+	char peek();
+	char peekNext();
+	bool isAtEnd();
+	void advance();
+	size_t getline(size_t start);
+	Token makeToken(TokenType type);
+	Token errorToken(const std::string& message);
+	void skipWhitespace();
+	Token identifier();
+	Token number();
+	Token string();
 };
 
 #endif // LEXER_H
