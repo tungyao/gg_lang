@@ -21,7 +21,7 @@ enum class TokenType {
 
 struct Token {
     TokenType type;
-    std::string lexeme;
+    std::string text;
     int line;
     int column;
 };

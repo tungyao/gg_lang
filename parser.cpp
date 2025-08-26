@@ -1,4 +1,3 @@
-c++
 #include "parser.h"
 #include <stdexcept>
 #include <utility>
