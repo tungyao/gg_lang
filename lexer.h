@@ -1,4 +1,3 @@
-<CODE_BLOCK>
 #ifndef LEXER_H
 #define LEXER_H
 
@@ -57,4 +56,3 @@ private:
 };
 
 #endif // LEXER_H
-</CODE_BLOCK>
