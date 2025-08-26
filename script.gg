@@ -1,0 +1,10 @@
+func add(a, b) {
+    a+=1;
+    return a + b;
+}
+let res = add(1,2);
+print("func result => " + res);
+print("func result => " + add(2,2));
+print("print test ");
+print("print a + \"str\"");
+print("print a +1 => a+" + 1);
