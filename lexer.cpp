@@ -1,6 +1,11 @@
-#include "lexer.h"
+#include <iostream>
+#include <string>
+#include <vector>
 #include <cctype>
-#include <stdexcept>
+#include <unordered_map>
+#include <memory>
+#include <variant>
+#include "lexer.h"
 
 Lexer::Lexer(const std::string& s) : src(s) {}
 

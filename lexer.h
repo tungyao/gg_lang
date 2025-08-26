@@ -7,20 +7,16 @@
 
 enum class TokenType {
     // Operators and Punctuation
-    PLUS, MINUS, STAR, SLASH, PERCENT,
-    EQUALS, BANG, LESS, GREATER, AMPERSAND, PIPE, CARET,
-    TILDE, QUESTION, COLON, SEMICOLON, COMMA, DOT,
-    LEFT_PAREN, RIGHT_PAREN, LEFT_BRACE, RIGHT_BRACE,
-    LEFT_BRACKET, RIGHT_BRACKET,
+	LET, PRINT, IF, ELSE, FOR, FUNC, RETURN,
 
-    // Keywords
-    LET, RETURN, IF, ELSE, WHILE, FOR, TRUE, FALSE, NIL,
+	IDENT, NUMBER, STRING,
 
-    // Literals
-    IDENTIFIER, INTEGER_LITERAL, FLOAT_LITERAL, STRING_LITERAL,
-
-    // Other
-    END_OF_FILE, ILLEGAL
+	PLUS, MINUS, STAR, SLASH, PERCENT,
+	ASSIGN, PLUS_ASSIGN, MINUS_ASSIGN, STAR_ASSIGN, SLASH_ASSIGN,
+	EQ, NEQ, LT, GT, LE, GE,
+	LPAREN, RPAREN, LBRACE, RBRACE,
+	SEMICOLON, COMMA,
+	END
 };
 
 struct Token {
@@ -33,15 +29,16 @@ struct Token {
 class Lexer {
 public:
     Lexer(const std::string& source);
-
-    Token nextToken();
+    Token next();
 
 private:
-    std::string source;
+    std::string src;
     int start;
     int current;
     int line;
     int column;
+	size_t pos = 0;
+
 
     char peek();
     char peekNext();
