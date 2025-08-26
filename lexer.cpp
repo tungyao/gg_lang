@@ -80,6 +80,8 @@ Token Lexer::next() {
 	if (c == '-' && pos + 1 < src.size() && src[pos + 1] == '=') { pos += 2; return { TokenType::MINUS_ASSIGN,"-=" , getline(pos) }; }
 	if (c == '*' && pos + 1 < src.size() && src[pos + 1] == '=') { pos += 2; return { TokenType::STAR_ASSIGN,"*=" , getline(pos) }; }
 	if (c == '/' && pos + 1 < src.size() && src[pos + 1] == '=') { pos += 2; return { TokenType::SLASH_ASSIGN,"/=" , getline(pos) }; }
+	if (c == '+' && pos + 1 < src.size() && src[pos + 1] == '+') { pos += 2; return { TokenType::PLUS_PLUS_ASSIGN,"++" , getline(pos) }; }
+	if (c == '-' && pos + 1 < src.size() && src[pos + 1] == '-') { pos += 2; return { TokenType::MINUS_MINUS_ASSIGN,"--" , getline(pos) }; }
 
 	// 单个token
 	pos++;
